@@ -22,7 +22,6 @@ app = Flask(__name__)
 CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
 app.secret_key = os.environ.get("SECRET_KEY", "medidiary-dev-secret-key-change-in-prod")
 
-# Configurações de Cookie para Cross-Origin (necessário para localhost:5173 -> localhost:5000)
 app.config.update(
     SESSION_COOKIE_SAMESITE='Lax',
     SESSION_COOKIE_HTTPONLY=True,
