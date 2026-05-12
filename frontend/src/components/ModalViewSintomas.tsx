@@ -174,8 +174,8 @@ export const ModalViewSintomas: React.FC<Props> = ({ isOpen, onClose }) => {
       }
 
       await atualizarSintoma(editingSintomaId, {
-        tipo: editingSintoma.tipo,
-        subtipo: editingSintoma.subtipo,
+        tipo: editingSintoma?.tipo || "",
+        subtipo: editingSintoma?.subtipo || "",
         inicio: dataInicio,
         fim: dataFim,
         descricao: editDescricao || null,
