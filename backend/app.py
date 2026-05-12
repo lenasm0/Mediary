@@ -19,6 +19,12 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 app = Flask(__name__)
+
+app.config.update(
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SECURE=True
+)
+
 CORS(
     app,
     resources={r"/api/*": {"origins": "*"}},
