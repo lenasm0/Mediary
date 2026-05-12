@@ -19,7 +19,13 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
+CORS(
+    app,
+    resources={r"/api/*": {"origins": "*"}},
+    supports_credentials=True,
+    allow_headers=["Content-Type", "Authorization"],
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+)
 app.secret_key = os.environ.get("SECRET_KEY", "medidiary-dev-secret-key-change-in-prod")
 
 app.config.update(
