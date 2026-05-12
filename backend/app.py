@@ -21,8 +21,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 app = Flask(__name__)
 
 app.config.update(
+    SECRET_KEY=os.environ.get("SECRET_KEY"),
     SESSION_COOKIE_SAMESITE="None",
-    SESSION_COOKIE_SECURE=True
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
 )
 
 CORS(
@@ -158,6 +160,7 @@ def login():
         if row and check_password_hash(row["senha_hash"], senha):
             session["usuario_id"] = row["id"]
             session["usuario_nome"] = row["nome"]
+            session.permanent = True
             return jsonify({
                 "message": "Login realizado com sucesso",
                 "user": {"id": row["id"], "nome": row["nome"], "email": row["email"]}
