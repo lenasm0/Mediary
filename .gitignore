@@ -22,3 +22,27 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
+.env
+*.env
+!*.env.example
+
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# DB local
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
