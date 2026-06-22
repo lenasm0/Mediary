@@ -1,29 +1,22 @@
 import psycopg2
 import os
+import jwt
 from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
 from functools import wraps
 from datetime import datetime, date, timedelta
 from psycopg2.extras import RealDictCursor
-from flask import (
-    request, session, jsonify
-)
+from flask import request, jsonify
 from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
+SECRET_KEY = os.environ.get("SECRET_KEY", "mediary-dev-secret-change-in-prod")
 
 app = Flask(__name__)
+app.config["SECRET_KEY"] = SECRET_KEY
 
-app.config.update(
-    SECRET_KEY=os.environ.get("SECRET_KEY", "mediary-dev-secret-change-in-prod"),
-    SESSION_COOKIE_SAMESITE="None",
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_HTTPONLY=True,
-)
-
-# Origens permitidas: FRONTEND_URL + localhost para dev local
 _frontend_url = os.environ.get("FRONTEND_URL", "")
 _allowed_origins = [o.strip() for o in _frontend_url.split(",") if o.strip()]
 _allowed_origins += ["http://localhost", "http://localhost:80", "http://127.0.0.1"]
@@ -36,7 +29,7 @@ CORS(
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
 
-# ── Conexão Supabase ──────────────────────────────────────────────────────────
+# ── DB ────────────────────────────────────────────────────────────────────────
 
 def get_db():
     conn = psycopg2.connect(dsn=DATABASE_URL)
@@ -46,7 +39,6 @@ def get_db():
 def init_db():
     conn = get_db()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS Usuarios (
             id SERIAL PRIMARY KEY,
@@ -56,7 +48,6 @@ def init_db():
             criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS Sintomas (
             id SERIAL PRIMARY KEY,
@@ -71,41 +62,63 @@ def init_db():
             FOREIGN KEY (usuario_id) REFERENCES Usuarios(id) ON DELETE CASCADE
         )
     """)
-
     conn.commit()
     conn.close()
-
 
 try:
     init_db()
 except Exception as e:
     print(f"[WARN] init_db falhou: {e}")
 
-# ── Decorator de autenticação ─────────────────────────────────────────────────
+# ── JWT helpers ───────────────────────────────────────────────────────────────
+
+def create_token(usuario_id, nome):
+    payload = {
+        "usuario_id": usuario_id,
+        "nome": nome,
+        "exp": datetime.utcnow() + timedelta(days=30)
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+def get_current_user():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+    token = auth.split(" ", 1)[1]
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if "usuario_id" not in session:
+        user = get_current_user()
+        if not user:
             return jsonify({"error": "Não autorizado"}), 401
+        request.current_user = user
         return f(*args, **kwargs)
     return decorated
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
 
-# ── Rotas de Autenticação ─────────────────────────────────────────────────────
 @app.route("/api/me", methods=["GET"])
+@login_required
 def me():
-    if "usuario_id" in session:
-        try:
-            conn = get_db()
-            cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("SELECT id, nome, email FROM Usuarios WHERE id = %s", (session["usuario_id"],))
-            row = cursor.fetchone()
-            conn.close()
-            if row:
-                return jsonify({"id": row["id"], "nome": row["nome"], "email": row["email"]})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-    return jsonify({"error": "Não logado"}), 401
+    try:
+        conn = get_db()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT id, nome, email FROM Usuarios WHERE id = %s",
+                       (request.current_user["usuario_id"],))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return jsonify({"id": row["id"], "nome": row["nome"], "email": row["email"]})
+        return jsonify({"error": "Usuário não encontrado"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/login", methods=["POST"])
@@ -120,13 +133,13 @@ def login():
         row = cursor.fetchone()
         conn.close()
         if row and check_password_hash(row["senha_hash"], senha):
-            session["usuario_id"] = row["id"]
-            session["usuario_nome"] = row["nome"]
-            session.permanent = True
-            return jsonify({"message": "Login realizado com sucesso",
-                            "user": {"id": row["id"], "nome": row["nome"], "email": row["email"]}})
-        else:
-            return jsonify({"error": "E-mail ou senha incorretos"}), 401
+            token = create_token(row["id"], row["nome"])
+            return jsonify({
+                "message": "Login realizado com sucesso",
+                "token": token,
+                "user": {"id": row["id"], "nome": row["nome"], "email": row["email"]}
+            })
+        return jsonify({"error": "E-mail ou senha incorretos"}), 401
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -167,10 +180,9 @@ def update_usuario():
         conn = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("UPDATE Usuarios SET nome=%s, email=%s WHERE id=%s",
-                       (nome, email, session["usuario_id"]))
+                       (nome, email, request.current_user["usuario_id"]))
         conn.commit()
         conn.close()
-        session["usuario_nome"] = nome
         return jsonify({"message": "Perfil atualizado com sucesso", "nome": nome, "email": email})
     except psycopg2.IntegrityError:
         return jsonify({"error": "Este e-mail já está em uso por outro usuário"}), 400
@@ -189,26 +201,27 @@ def update_senha():
     try:
         conn = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT senha_hash FROM Usuarios WHERE id = %s", (session["usuario_id"],))
+        cursor.execute("SELECT senha_hash FROM Usuarios WHERE id = %s",
+                       (request.current_user["usuario_id"],))
         row = cursor.fetchone()
         if row and check_password_hash(row["senha_hash"], senha_atual):
             cursor.execute("UPDATE Usuarios SET senha_hash=%s WHERE id=%s",
-                           (generate_password_hash(senha_nova), session["usuario_id"]))
+                           (generate_password_hash(senha_nova), request.current_user["usuario_id"]))
             conn.commit()
             conn.close()
             return jsonify({"message": "Senha atualizada com sucesso"})
-        else:
-            conn.close()
-            return jsonify({"error": "Senha atual incorreta"}), 401
+        conn.close()
+        return jsonify({"error": "Senha atual incorreta"}), 401
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/logout")
 def logout():
-    session.clear()
     return jsonify({"message": "Logout realizado com sucesso"})
 
+
+# ── Sintomas ──────────────────────────────────────────────────────────────────
 
 @app.route("/api/sintomas/calendario")
 @login_required
@@ -223,7 +236,7 @@ def api_calendario_info():
             WHERE usuario_id = %s
             AND (TO_CHAR(inicio, 'YYYY-MM') <= %s
                 AND (fim IS NULL OR TO_CHAR(fim, 'YYYY-MM') >= %s))
-        """, (session["usuario_id"], f"{ano}-{mes:02d}", f"{ano}-{mes:02d}"))
+        """, (request.current_user["usuario_id"], f"{ano}-{mes:02d}", f"{ano}-{mes:02d}"))
         rows = cursor.fetchall()
         calendario = {}
         for row in rows:
@@ -263,7 +276,7 @@ def api_sintomas_dia():
                     AND TO_CHAR(inicio, 'YYYY-MM-DD') <= %s
                     AND TO_CHAR(fim, 'YYYY-MM-DD') >= %s))
             ORDER BY inicio
-        """, (session["usuario_id"], data_sel, data_sel, data_sel))
+        """, (request.current_user["usuario_id"], data_sel, data_sel, data_sel))
         sintomas = cursor.fetchall()
         conn.close()
         return jsonify(sintomas)
@@ -302,8 +315,9 @@ def api_adicionar_sintoma():
                 return jsonify({"error": "A data de término não pode ser anterior à de início"}), 400
         conn = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("INSERT INTO Sintomas (usuario_id, tipo, subtipo, descricao, inicio, fim) VALUES (%s, %s, %s, %s, %s, %s)",
-                       (session["usuario_id"], tipo, subtipo, descricao, inicio, fim))
+        cursor.execute(
+            "INSERT INTO Sintomas (usuario_id, tipo, subtipo, descricao, inicio, fim) VALUES (%s, %s, %s, %s, %s, %s)",
+            (request.current_user["usuario_id"], tipo, subtipo, descricao, inicio, fim))
         conn.commit()
         conn.close()
         return jsonify({"message": "Sintoma adicionado com sucesso"}), 201
@@ -314,11 +328,12 @@ def api_adicionar_sintoma():
 @app.route("/api/sintomas/<int:sintoma_id>", methods=["PUT", "DELETE"])
 @login_required
 def api_sintoma_detail(sintoma_id):
+    uid = request.current_user["usuario_id"]
     if request.method == "DELETE":
         try:
             conn = get_db()
             cursor = conn.cursor(cursor_factory=RealDictCursor)
-            cursor.execute("DELETE FROM Sintomas WHERE id=%s AND usuario_id=%s", (sintoma_id, session["usuario_id"]))
+            cursor.execute("DELETE FROM Sintomas WHERE id=%s AND usuario_id=%s", (sintoma_id, uid))
             conn.commit()
             conn.close()
             return jsonify({"message": "Sintoma excluído"})
@@ -328,7 +343,7 @@ def api_sintoma_detail(sintoma_id):
     try:
         conn = get_db()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT * FROM Sintomas WHERE id=%s AND usuario_id=%s", (sintoma_id, session["usuario_id"]))
+        cursor.execute("SELECT * FROM Sintomas WHERE id=%s AND usuario_id=%s", (sintoma_id, uid))
         sintoma_atual = cursor.fetchone()
         if not sintoma_atual:
             conn.close()
@@ -341,7 +356,7 @@ def api_sintoma_detail(sintoma_id):
         cursor.execute("""UPDATE Sintomas SET tipo=%s, subtipo=%s, descricao=%s,
                          inicio=%s, fim=%s, atualizado_em=CURRENT_TIMESTAMP
                          WHERE id=%s AND usuario_id=%s""",
-                       (tipo, subtipo, descricao, inicio, fim, sintoma_id, session["usuario_id"]))
+                       (tipo, subtipo, descricao, inicio, fim, sintoma_id, uid))
         conn.commit()
         conn.close()
         return jsonify({"message": "Sintoma atualizado"})
@@ -363,7 +378,7 @@ def api_sintomas_mes(ano, mes):
             AND (TO_CHAR(inicio, 'YYYY-MM') <= %s
                 AND (fim IS NULL OR TO_CHAR(fim, 'YYYY-MM') >= %s))
             ORDER BY inicio
-        """, (session["usuario_id"], mes_formatado, mes_formatado))
+        """, (request.current_user["usuario_id"], mes_formatado, mes_formatado))
         colunas = [desc[0] for desc in cursor.description]
         data = [dict(zip(colunas, row)) for row in cursor.fetchall()]
         conn.close()
