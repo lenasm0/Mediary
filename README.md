@@ -57,7 +57,7 @@ Mediary/
 
 **1. Clone o repositório**
 ```bash
-git clone https://github.com/seu-usuario/Mediary.git
+git clone https://github.com/lenasm0/Mediary.git
 cd Mediary
 ```
 
