@@ -1,114 +1,107 @@
-# MediDiary 🏥
+# Mediary
 
-Diário médico web desenvolvido com Python (Flask), HTML, CSS e SQL Server.
-
----
-
-## Estrutura do Projeto
-
-```
-medidiary/
-├── app.py                  ← Backend Flask (rotas, lógica)
-├── schema.sql              ← Script SQL Server (banco + tabelas)
-├── requirements.txt        ← Dependências Python
-├── templates/
-│   ├── base.html           ← Layout base
-│   ├── login.html          ← Tela de login
-│   ├── cadastro.html       ← Tela de cadastro
-│   ├── calendario.html     ← Calendário mensal
-│   ├── visualizar.html     ← Sintomas do dia selecionado
-│   ├── adicionar.html      ← Formulário para novo sintoma
-│   └── editar.html         ← Editar / excluir sintoma
-└── static/
-    └── css/
-        └── style.css       ← Estilos completos
-```
+### Seu diário de sintomas, sempre com você
 
 ---
 
-## Pré-requisitos
+## Sobre o projeto
 
-- Python 3.10+
-- SQL Server (local ou remoto) com ODBC Driver 17
-- pip
+**Mediary** é uma aplicação web (e PWA instalável) para registrar sintomas de saúde do dia a dia — dor, náusea, fadiga, e outros — com início, fim, descrição e visualização em um calendário mensal. Pensado para quem precisa acompanhar padrões de saúde ao longo do tempo, seja para uso pessoal ou para levar ao médico.
 
----
+## Funcionalidades
 
-## Configuração
+- **Autenticação segura** via JWT (cadastro, login, logout)
+- **Calendário interativo** com indicação de dias com sintomas registrados
+- **Registro de sintomas** com tipo, subtipo, descrição, início e fim
+- **Edição e exclusão** de registros existentes
+- **Gerenciamento de perfil** (nome, e-mail, senha)
+- **PWA instalável** — funciona offline e pode ser adicionado à tela inicial
+- **API REST** própria, separada do frontend
 
-### 1. Banco de dados
+## Stack Tecnológica
 
-Abra o SQL Server Management Studio (SSMS) ou Azure Data Studio e execute:
+| Camada | Tecnologias |
+|---|---|
+| **Frontend** | React + TypeScript, Vite, Tailwind CSS, Zustand, Axios |
+| **Backend** | Flask (Python), Gunicorn, PyJWT |
+| **Banco de Dados** | PostgreSQL via [Supabase](https://supabase.com/) |
+| **PWA** | Vite PWA Plugin (Workbox) |
+| **Infraestrutura** | Docker, Nginx, [Railway](https://railway.app/) |
 
-```sql
--- Execute o arquivo schema.sql
+## Estrutura do projeto
+
+```
+Mediary/
+├── backend/              # API Flask
+│   ├── app.py            # Rotas e lógica da aplicação
+│   ├── requirements.txt  # Dependências Python
+│   └── Dockerfile
+├── frontend/              # SPA React
+│   ├── src/
+│   │   ├── api/          # Camada de comunicação com a API
+│   │   ├── pages/        # Páginas da aplicação
+│   │   ├── store/        # Estado global (Zustand)
+│   │   └── components/   # Componentes reutilizáveis
+│   ├── vite.config.ts    # Configuração do Vite + PWA
+│   └── Dockerfile
+└── docker-compose.yml    # Orquestração para desenvolvimento local
 ```
 
-### 2. Dependências Python
+## Rodando localmente
 
+### Pré-requisitos
+- [Docker](https://www.docker.com/) e Docker Compose
+- Uma conta no [Supabase](https://supabase.com/) com um projeto criado
+
+### Passo a passo
+
+**1. Clone o repositório**
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/seu-usuario/Mediary.git
+cd Mediary
 ```
 
-### 3. Configurar a conexão
+**2. Configure as variáveis de ambiente do backend**
 
-Edite a variável `DB_CONN_STR` em `app.py`:
-
-```python
-DB_CONN_STR = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=localhost;"        # ← seu servidor
-    "DATABASE=MediDiary;"
-    "UID=sa;"                  # ← seu usuário
-    "PWD=SuaSenha123!;"        # ← sua senha
-    "TrustServerCertificate=yes;"
-)
+Crie `backend/.env`:
+```env
+DATABASE_URL=postgresql://postgres.XXXX:SENHA@aws-1-us-east-1.pooler.supabase.com:6543/postgres
+SECRET_KEY=uma-chave-secreta-aleatoria
+FRONTEND_URL=http://localhost:80
 ```
 
-### 4. Executar
-
+**3. Suba os containers**
 ```bash
-python app.py
+docker-compose up --build
 ```
 
-Acesse: http://localhost:5000
+**4. Acesse**
+- Frontend: [http://localhost](http://localhost)
+- Backend (health check): [http://localhost:5000/api/health](http://localhost:5000/api/health)
 
----
+## Deploy em produção (Railway)
 
-## Telas
+O projeto é deployado como **dois serviços independentes** no Railway:
 
-| Rota | Descrição |
-|------|-----------|
-| `/login` | Login com e-mail e senha |
-| `/cadastro` | Criar nova conta |
-| `/calendario` | Calendário mensal com marcação de dias com sintomas |
-| `/visualizar/<ano>/<mes>/<dia>` | Lista de sintomas do dia |
-| `/adicionar` | Adicionar novo sintoma |
-| `/editar/<id>` | Editar ou excluir sintoma existente |
-| `/api/sintomas/<ano>/<mes>` | API JSON dos sintomas do mês |
+| Serviço | Root Directory | Variáveis necessárias |
+|---|---|---|
+| `backend` | `backend` | `DATABASE_URL`, `SECRET_KEY`, `FRONTEND_URL` |
+| `frontend` | `frontend` | `VITE_API_URL` |
 
----
+> Veja o passo a passo completo em [`DEPLOY.md`](./DEPLOY.md)
 
-## Sintomas disponíveis
+## Instalando como App (PWA)
 
-| Chave | Exibição |
-|-------|---------|
-| DOR | Dor (com subtipo: Cabeça, Abdominal, Muscular, Costas, Articulação, Garganta) |
-| NAUSEA | Náusea |
-| FADIGA | Fadiga |
-| VERTIGEM | Vertigem |
-| FALTA_AR | Falta de Ar |
-| TOSSE | Tosse |
-| DIARREIA | Diarréia |
-| CONSTIPACAO | Constipação |
-| COCEIRA | Coceira |
-| OUTRO | Outro (campo livre) |
+Acesse a URL do frontend em produção pelo navegador do celular ou computador:
 
----
+- **Android (Chrome)**: toque no menu → "Instalar app" ou "Adicionar à tela inicial"
+- **iOS (Safari)**: toque em compartilhar → "Adicionar à Tela de Início"
+- **Desktop (Chrome/Edge)**: clique no ícone de instalação na barra de endereço
 
-## Segurança
+## Autenticação
 
-- Senhas armazenadas com hash (Werkzeug `generate_password_hash`)
-- Sessões Flask protegidas por `SECRET_KEY`
-- Todos os dados filtrados por `usuario_id` da sessão
-- Para produção, defina `SECRET_KEY` via variável de ambiente
+A API utiliza **JWT (JSON Web Token)** em vez de cookies de sessão, garantindo compatibilidade total com navegadores mobile e cenários cross-domain. O token é retornado no login e enviado em cada requisição via header:
+
+```
+Authorization: Bearer <token>
+```
