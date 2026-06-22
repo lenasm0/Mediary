@@ -3,6 +3,9 @@ import api from './axios';
 export const authService = {
   login: async (email: string, senha: string) => {
     const response = await api.post('/api/login', { email, senha });
+    if (response.data.token) {
+      localStorage.setItem('mediary_token', response.data.token);
+    }
     return response.data;
   },
   cadastro: async (nome: string, email: string, senha: string) => {
@@ -10,8 +13,8 @@ export const authService = {
     return response.data;
   },
   logout: async () => {
-    const response = await api.get('/api/logout');
-    return response.data;
+    localStorage.removeItem('mediary_token');
+    return { message: 'Logout realizado com sucesso' };
   },
   me: async () => {
     const response = await api.get('/api/me');
